@@ -4,12 +4,11 @@
 #include <WiFi.h>
 #include <uri/UriBraces.h>
 
-/* Put your SSID & Password */
 const char *ssid = "MindSharkFire";
 const char *password = "stayoutofmindshark";
 
 /* Put IP Address details */
-IPAddress local_ip(192, 168, 1, 169);
+IPAddress local_ip(192, 168, 1, 200);
 IPAddress gateway(192, 168, 1, 1);
 IPAddress subnet(255, 255, 255, 0);
 
@@ -25,14 +24,16 @@ void setup() {
   for (int i = 0; i < outputs; i++) {
     pinMode(pins[i], OUTPUT);
   }
-  WiFi.softAP(ssid, password);
-  WiFi.softAPConfig(local_ip, gateway, subnet);
+  Serial.println("Set Pin Modes Complete");
+  initWifi();
+  Serial.println("Access Point Config Complete");
   delay(100);
 
   server.on("/", handle_shutoff);
-  server.on(UriBraces("/on/{}"), handle_On);
-  server.on(UriBraces("/off/{}"), handle_Off);
+  server.on(UriBraces("/{}/on/"), handle_On);
+  server.on(UriBraces("/{}/off/"), handle_Off);
   server.onNotFound(handle_NotFound);
+  Serial.println("Handler Set Complete");
 
   server.begin();
   Serial.println("HTTP server started");
@@ -48,13 +49,24 @@ void loop() {
   }
 }
 
-void handle_shutoff() {
-  for (int i; i < outputs; i++) {
-    states[i] = LOW;
+void initWifi() {
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(ssid, password);
+  Serial.print("Connecting to WiFi ..");
+  while (WiFi.status() != WL_CONNECTED) {
+    Serial.print('.');
+    delay(1000);
   }
-  Serial.println("All Outputs Set to OFF");
-  server.send(200, "text/plain", StateResponse());
+
+  // Configures static IP address
+  if (!WiFi.config(local_ip, gateway, subnet)) {
+    Serial.println("STA Failed to configure");
+  }
+
+  Serial.println(WiFi.localIP());
 }
+
+void handle_shutoff() { UpdateState("all", false); }
 
 void handle_On() {
   String path_param = server.pathArg(0);
@@ -73,6 +85,7 @@ void UpdateState(String path_param, bool state) {
     for (int i; i < outputs; i++) {
       states[i] = state;
     }
+    server.send(200, "text/plain", "State Set for All");
   } else {
     try {
       int output_index = path_param.toInt();
@@ -80,27 +93,15 @@ void UpdateState(String path_param, bool state) {
         states[output_index] = state;
         server.send(200, "text/plain", "State Set: '" + path_param + "'");
       } else {
-        Serial.println("output index out of range");
-        server.send(200, "text/plain",
+        server.send(416, "text/plain",
                     "Index out of Range: '" + path_param + "'");
       }
     } catch (std::invalid_argument const &e) {
-      Serial.println("Bad input: std::invalid_argument thrown");
+      server.send(416, "text/plain", "Bad input: std::invalid_argument thrown");
     } catch (std::out_of_range const &e) {
-      Serial.println("Integer overflow: std::out_of_range thrown");
-    }
-  }
-}
 
-String StateResponse() {
-  String returnStr = "";
-  for (int i = 0; i < outputs; i++) {
-    String indexStr = String(i);
-    if (states[i]) {
-      returnStr += "<p>Output " + indexStr + " Status: ON</p>\n";
-    } else {
-      returnStr += "<p>Output " + indexStr + " Status: OFF</p>\n";
+      server.send(416, "text/plain",
+                  "Integer overflow: std::out_of_range thrown");
     }
   }
-  return returnStr;
 }
