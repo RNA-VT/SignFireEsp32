@@ -53,6 +53,7 @@ void setup() {
 
 void serverTask(void *pvParameters) {
   // Set Handlers
+  server.enableCORS();
   server.on("/", handle_shutoff);
   server.on(UriBraces("/{}/on/"), handle_On);
   server.on(UriBraces("/{}/off/"), handle_Off);
